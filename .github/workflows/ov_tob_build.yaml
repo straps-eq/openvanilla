@@ -2,7 +2,7 @@ name: OpenVanilla ToB Build
 
 # Builds OpenVanilla (MacroQuest + community plugins) for the EQEmu ToB client
 # (eqgame.exe "Sep 11 2025 11:54:10"), using src/MacroQuestToB.sln.
-# Each successful build of emu-tob republishes the tob-latest prerelease.
+# Each successful build of emu-tob republishes the tob-latest release.
 
 on:
   push:
@@ -129,11 +129,11 @@ jobs:
             build-errors.log
           if-no-files-found: warn
 
-      - name: Publish prerelease
+      - name: Publish release
         if: github.ref == 'refs/heads/emu-tob' && steps.full.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           gh release delete tob-latest --cleanup-tag --yes 2>$null
-          gh release create tob-latest OpenVanilla-ToB.zip --target ${{ github.sha }} --prerelease --title "OpenVanilla ToB (build ${{ github.run_number }})" --notes "OpenVanilla for the EQEmu ToB client (eqgame.exe Sep 11 2025 11:54:10), built from ${{ github.sha }}. Unzip, run MacroQuest.exe, then start the client."
+          gh release create tob-latest OpenVanilla-ToB.zip --target ${{ github.sha }} --latest --title "OpenVanilla ToB (build ${{ github.run_number }})" --notes "OpenVanilla for the EQEmu ToB client (eqgame.exe Sep 11 2025 11:54:10), built from ${{ github.sha }}. Unzip, run MacroQuest.exe, then start the client."
