@@ -1,0 +1,12 @@
+diff --git a/plugin/NavMeshLoader.cpp b/plugin/NavMeshLoader.cpp
+index 4049e19..453fe4a 100644
+--- a/plugin/NavMeshLoader.cpp
++++ b/plugin/NavMeshLoader.cpp
+@@ -32,5 +32,6 @@ struct NavMeshLoader::FileWatcher
+ 				if (ci_ends_with(fileName, L".navmesh"))
+ 				{
+-					if (event == wil::FolderChangeEvent::Modified || event == wil::FolderChangeEvent::Added)
++					if (event == wil::FolderChangeEvent::Modified || event == wil::FolderChangeEvent::Added
++						|| event == wil::FolderChangeEvent::RenameNewName)
+ 						m_callback(wstring_to_utf8(fileName));
+ 				}
