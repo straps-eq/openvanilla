@@ -113,7 +113,10 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item data/config/MacroQuest_default.ini build/bin/Release/config/ -Force -ErrorAction SilentlyContinue
-          Compress-Archive -Path build/bin/Release/* -DestinationPath OpenVanilla-ToB.zip -Force
+          # Ship only what players need; debug symbols and link libraries stay out of the zip.
+          New-Item -ItemType Directory -Force dist | Out-Null
+          robocopy build/bin/Release dist/OpenVanilla-ToB /E /XF *.pdb *.lib *.exp *.ilk /NFL /NDL /NJH /NJS | Out-Null
+          Compress-Archive -Path dist/OpenVanilla-ToB -DestinationPath OpenVanilla-ToB.zip -Force
 
       - name: Upload build
         if: always()
