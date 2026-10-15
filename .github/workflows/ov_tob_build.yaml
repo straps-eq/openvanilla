@@ -1,0 +1,132 @@
+name: OpenVanilla ToB Build
+
+# Builds OpenVanilla (MacroQuest + community plugins) for the EQEmu ToB client
+# (eqgame.exe "Sep 11 2025 11:54:10"), using src/MacroQuestToB.sln.
+# Pushing a tag like tob-v1 also publishes a GitHub prerelease with the zip.
+
+on:
+  push:
+    branches:
+      - emu-tob
+    tags:
+      - tob-*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  platform: x64
+  solution: src/MacroQuestToB.sln
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Checkout submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1 --jobs 8
+
+      - name: Set version info
+        shell: pwsh
+        run: |
+          $versionFile = "src/main/MQVersionInfo.h"
+          $v = Get-Content $versionFile
+          $v = $v -replace '#define MQMAIN_VERSION_REV\s+\d+', '#define MQMAIN_VERSION_REV   6'
+          $v = $v -replace '#define MQMAIN_VERSION_BUILD (\d+)', "#define MQMAIN_VERSION_BUILD ${{ github.run_number }}"
+          $v = $v -replace '#define MQMAIN_GIT_HASH "(.*)"', "#define MQMAIN_GIT_HASH `"$(git rev-parse --short HEAD)`""
+          $v | Set-Content $versionFile
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v3
+
+      - name: Restore NuGet packages
+        run: nuget restore ${{ env.solution }}
+
+      - name: Restore vcpkg cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            contrib/vcpkg/installed
+            contrib/vcpkg/vcpkg.exe
+            contrib/vcpkg/vcpkg_mq_last_bootstrap*.txt
+          key: ${{ runner.os }}-vcpkg-${{ env.platform }}-
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-${{ env.platform }}-
+            ${{ runner.os }}-vcpkg-
+
+      # Core first, so a plugin failure can't hide a core failure.
+      - name: Build MQ2Main
+        run: msbuild ${{ env.solution }} /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /t:core\MQ2Main /p:PreferredToolArchitecture=x64
+
+      - name: Save vcpkg cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            contrib/vcpkg/installed
+            contrib/vcpkg/vcpkg.exe
+            contrib/vcpkg/vcpkg_mq_last_bootstrap*.txt
+          key: ${{ runner.os }}-vcpkg-${{ env.platform }}-${{ hashFiles('contrib/vcpkg/installed/vcpkg/status') }}
+
+      # Plugins that fail to compile on ToB are reported but don't stop the build.
+      - name: Build everything
+        id: full
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          msbuild ${{ env.solution }} /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64 "/flp1:errorsonly;logfile=build-errors.log"
+          exit $LASTEXITCODE
+
+      - name: Report failed projects
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = $env:GITHUB_STEP_SUMMARY
+          "## OpenVanilla ToB build" | Out-File $summary -Append
+          $dlls = Get-ChildItem build/bin/Release/plugins -Filter *.dll -ErrorAction SilentlyContinue | Sort-Object Name
+          "Built $($dlls.Count) plugin DLLs." | Out-File $summary -Append
+          if (Test-Path build-errors.log) {
+            $projects = Select-String -Path build-errors.log -Pattern '\[([^\]]+\.(vcx|cs)proj)' |
+              ForEach-Object { Split-Path $_.Matches[0].Groups[1].Value -LeafBase } | Sort-Object -Unique
+            if ($projects) {
+              "### Projects with errors" | Out-File $summary -Append
+              $projects | ForEach-Object { "- $_" } | Out-File $summary -Append
+            }
+          }
+
+      - name: Package
+        if: always()
+        shell: pwsh
+        run: |
+          Copy-Item data/config/MacroQuest_default.ini build/bin/Release/config/ -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path build/bin/Release/* -DestinationPath OpenVanilla-ToB.zip -Force
+
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenVanilla-ToB-${{ github.run_number }}
+          path: |
+            OpenVanilla-ToB.zip
+            build-errors.log
+          if-no-files-found: warn
+
+      - name: Publish prerelease
+        if: startsWith(github.ref, 'refs/tags/tob-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" OpenVanilla-ToB.zip --prerelease --title "OpenVanilla ToB ${{ github.ref_name }}" --notes "OpenVanilla for the EQEmu ToB client (eqgame.exe Sep 11 2025 11:54:10). Unzip, run MacroQuest.exe, then start the client."
