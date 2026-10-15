@@ -114,6 +114,9 @@ jobs:
           # Ship only what players need; debug symbols and link libraries stay out of the zip.
           New-Item -ItemType Directory -Force dist | Out-Null
           robocopy build/bin/Release dist/OpenVanilla-ToB /E /XF *.pdb *.lib *.exp *.ilk /NFL /NDL /NJH /NJS | Out-Null
+          # robocopy exit codes below 8 mean success
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+          $global:LASTEXITCODE = 0
           Compress-Archive -Path dist/OpenVanilla-ToB -DestinationPath OpenVanilla-ToB.zip -Force
 
       - name: Upload build
