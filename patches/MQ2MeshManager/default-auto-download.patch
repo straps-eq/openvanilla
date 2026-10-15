@@ -1,0 +1,9 @@
+diff --git a/MQ2MeshManager.cpp b/MQ2MeshManager.cpp
+index 0907551..986b651 100644
+--- a/MQ2MeshManager.cpp
++++ b/MQ2MeshManager.cpp
+@@ -115,3 +115,3 @@ bool ThreadSafe = true;
+ int ThreadLockSeconds = 20;
+-bool AutoDownloadMissing = false, AutoCheckForUpdates = false;
++bool AutoDownloadMissing = true, AutoCheckForUpdates = true;
+ bool _init = false;

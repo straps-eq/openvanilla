@@ -33,6 +33,19 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive --depth=1 --jobs 8
 
+      # Small ToB-build tweaks to plugin defaults, kept as patches so the plugin submodules stay untouched.
+      - name: Apply plugin patches
+        shell: pwsh
+        run: |
+          Get-ChildItem patches -Directory | ForEach-Object {
+            $plugin = $_.Name
+            Get-ChildItem $_.FullName -Filter *.patch | ForEach-Object {
+              git -C "plugins/$plugin" apply --whitespace=nowarn $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Patch $($_.Name) failed for $plugin" }
+              Write-Host "Applied $($_.Name) to $plugin"
+            }
+          }
+
       - name: Set version info
         shell: pwsh
         run: |
