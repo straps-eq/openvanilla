@@ -1,3 +1,94 @@
+## 6/23/2026
+
+### Features
+
+- Added a UI Settings menu to the loader
+- The loader's UI will now persist between sessions (if you had it open it remembers where you were). You can disable this in the new UI menu.
+
+### Bug Fixes
+
+- Fix loader showing edit dialogs twice in modals (popups)
+
+### Changes
+
+- Toggle Sliders will now behave like checkboxes in the loader
+
+## 6/17/2026
+
+### Bug Fixes
+
+- Fix issue where /removeaug would not use Perfected Augmentation Distiller (#1007)
+
+## 6/12/2026
+
+### Bug Fixes
+
+- Fix an issue where clicking on the right side of dropdown boxes in the loader would not open the dropdown.
+
+### Other Changes
+
+- Made modal dropdown boxes more clearly dropdown boxes in the loader
+
+## 6/11/2026
+
+### Features
+
+- Full ini redirection is now supported for all game settings (eqclient.ini) when launching from a profile. Launch from a single directory, without sharing the settings! Setting the custom ini to an ini that doesn't exist will copy the default ini to that location. (#42)
+- You can now disable sound from within the profile as well, having some eqgame clients launch with sound and others launching without (#925)
+- You can also add any other custom parameters to the game launch, all within settings
+- Added a "clear" button for setting the custom client ini back to default
+
+### Other Changes
+
+- Updated the MacroQuest toggle buttons to be more clear about what is toggled on and off
+- Magician and "Shadow Knight" are now consistent across spawn searches. Using "Mage" or "shadowknight" will still work, but it will tell you that you're using the wrong one (#155 & #156)
+- mq.TLO.Me.BuffDuration[SomeBuff] will now report the same as mq.TLO.Me.Buff[SomeBuff].Duration instead of using CachedBuffs
+
+### Bug Fixes
+
+- /foreground should be more reliable now and account for different situations where Windows does not want you to foreground. If there are remaining cases, please report them on the issues page and reach out to Knightly (who very much loves working on /foreground) to troubleshoot
+- WillStackWith (StacksWith et al) now properly reports whether a buff stacks or not when your own buff bar is full (#793)
+- Post Office mailboxes (Actors) are no longer case sensitive. Fixes an issue where mailboxes could be different depending on how a plugin was loaded or across systems and messages would not be properly delivered. (#963)
+- A variable that expands into itself will no longer infinitely recurse and crash the client (but you still shouldn't do this) - Fixes echoing ${EverQuest.LastCommand} crashing the client (#45)
+
+## 5/18/2026
+
+### Bug fixes
+
+- Fix for /lua stop crash when a dead script was part of the stop call
+- Fixed some luarocks modules not building when a version already existed for another architecture
+- Prospective fix for autologin window hotkeys not behaving for some people after the last /foreground update.
+
+## 4/26/2026
+
+### Features
+
+Support for stencil and alpha masking is now available through ImGui to c++ and lua. This allows for
+creating more advanced effects like rounded corners on anything or gradient text.
+
+- For more info see [mq/imgui/AlphaMask.h](https://github.com/macroquest/macroquest/blob/master/include/mq/imgui/AlphaMask.h).
+- An example is available via `/lua run examples/imgui_mask_demo`
+
+
+## 4/22/2026
+
+### Bug fixes
+
+- Fixed an issue where the lua imgui binding for BeginPopupModal was not properly allowing flags
+- Added some brute force tactics to `/foreground` so that it will work in more situations
+- Fix context menu losing focus and not closing on focus
+- rof2: Fix crash when opening alt ability inspector
+
+### Features
+
+- Added mq.canDelay() - returns true if the script is in a state where delay is allowed
+
+### PackageMan improvements
+
+- Cleaned up workarounds in PackageMan.lua for the flag issue
+- Added a fail state in PackageMan to prevent use if it is in a state that will for sure fail. This is a prospective fix for the blocking issue.
+- Added a fail state in ImguiHelper to prevent use in a similar scenario (should not reach from PackageMan, but just in case)
+
 ## 4/18/2026
 
 ### Bug fixes

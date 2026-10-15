@@ -22,11 +22,18 @@
 #include "imgui/ImGuiTreePanelWindow.h"
 #include "login/AutoLogin.h"
 
+#include "mq/base/Config.h"
 #include "spdlog/spdlog.h"
 
  // map of panels in the main GUI window
 static mq::imgui::ImGuiTreePanelWindow* s_mainWindow = nullptr;
 static std::map<const char*, void(*)()> s_pendingPanels;
+
+// last selected panel we wrote to the ini so we can gate writes on changes
+static std::string s_lastPersistedPanel;
+
+// whether we persist/restore the main window panel between sessions
+static bool s_persistMainWindow = true;
 
 // map of viewport windows to render
 static std::map<std::string, std::function<bool()>> s_viewports;
@@ -37,6 +44,12 @@ static std::vector<std::pair<std::string, std::function<void()>>> s_menus;
 
 // we want the context menu to call OpenPopup exactly once per right click, so we need a state toggle
 static bool s_contextOpen;
+
+// tracks that we need to call SetForegroundWindow on the popup viewport
+static bool s_contextNeedsFocus = false;
+
+// tracks if the popup viewport has ever held OS focus
+static bool s_contextGotFocus = false;
 
 // storage for filename strings for the backend
 static std::string s_iniFilename;
@@ -146,7 +159,13 @@ bool ToggleSlider(const char* label, bool* v)
 	const ImVec2 pos = window->DC.CursorPos;
 	const ImRect total_bb(pos, pos + ImVec2(width + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f), label_size.y + style.FramePadding.y * 2.0f));
 
-	const bool pressed = ImGui::InvisibleButton(label, ImVec2(width, height), ImGuiButtonFlags_PressedOnClick);
+	ImGui::ItemSize(total_bb, style.FramePadding.y);
+	if (!ImGui::ItemAdd(total_bb, id))
+		return false;
+
+	bool hovered;
+	bool held;
+	const bool pressed = ImGui::ButtonBehavior(total_bb, id, &hovered, &held, ImGuiButtonFlags_PressedOnClick);
 	if (pressed)
 	{
 		*v = !*v;
@@ -166,13 +185,13 @@ bool ToggleSlider(const char* label, bool* v)
 
 	const ImU32 bg_color = ImGui::GetColorU32(style.Colors[ImGuiCol_FrameBg]);
 
-	ImU32 fg_color;
-	if (ImGui::IsItemClicked())
-		fg_color = ImGui::GetColorU32(style.Colors[ImGuiCol_ButtonActive]);
-	else if (ImGui::IsItemHovered())
-		fg_color = ImGui::GetColorU32(style.Colors[ImGuiCol_ButtonHovered]);
-	else
-		fg_color = ImGui::GetColorU32(style.Colors[ImGuiCol_Button]);
+	ImVec4 fg = ImLerp(style.Colors[ImGuiCol_Button], style.Colors[ImGuiCol_CheckMark], t);
+	if (held)
+		fg = ImLerp(fg, style.Colors[ImGuiCol_ButtonActive], 0.30f);
+	else if (hovered)
+		fg = ImLerp(fg, style.Colors[ImGuiCol_ButtonActive], 0.15f);
+
+	const ImU32 fg_color = ImGui::GetColorU32(fg);
 
 	window->DrawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), bg_color, height * 0.5f);
 	window->DrawList->AddCircleFilled(ImVec2(pos.x + radius + t * (width - radius * 2.f), pos.y + radius), radius - 1.5f, fg_color);
@@ -336,6 +355,27 @@ void RemoveMainPanel(const char* name)
 		s_mainWindow->RemovePanel(name);
 }
 
+bool GetPersistMainWindow()
+{
+	return s_persistMainWindow;
+}
+
+void SetPersistMainWindow(bool persist)
+{
+	if (persist != s_persistMainWindow)
+	{
+		s_persistMainWindow = persist;
+		mq::WritePrivateProfileBool("MacroQuest", "PersistMainWindow", persist, internal_paths::MQini);
+
+		if (!persist)
+		{
+			// Forget any saved panels
+			s_lastPersistedPanel.clear();
+			mq::WritePrivateProfileString("MacroQuest", "MainWindowPanel", "", internal_paths::MQini);
+		}
+	}
+}
+
 bool AddContextGroup(const std::string& name, const std::function<void()>& callback)
 {
 	s_menus.emplace_back(name, callback);
@@ -365,6 +405,14 @@ void Run(const std::function<bool()>& mainLoop)
 		s_mainWindow->AddPanel(name, callback);
 
 	s_pendingPanels.clear();
+
+	// Restore the UI window if it was open last exit (when enabled in UI Settings)
+	s_persistMainWindow = mq::GetPrivateProfileBool("MacroQuest", "PersistMainWindow", true, internal_paths::MQini);
+	if (s_persistMainWindow)
+	{
+		if (const std::string panel = mq::GetPrivateProfileString("MacroQuest", "MainWindowPanel", "", internal_paths::MQini); !panel.empty())
+			SelectMainPanel(panel);
+	}
 
 	s_iniFilename = (std::filesystem::path{ internal_paths::Config } / "MacroQuest_LauncherUI.ini").string();
 	s_logFilename = (std::filesystem::path{ internal_paths::Logs } / "MacroQuest_LauncherUI.log").string();
@@ -425,7 +473,16 @@ void Run(const std::function<bool()>& mainLoop)
 
 				ImGui::SetNextWindowClass(&s_viewportClass);
 				if (!it->second())
+				{
+					// Clear the saved panel so we don't reopen next run.
+					if (it->first == "MacroQuest")
+					{
+						s_lastPersistedPanel.clear();
+						mq::WritePrivateProfileString("MacroQuest", "MainWindowPanel", "", internal_paths::MQini);
+					}
+
 					it = s_viewports.erase(it);
+				}
 				else
 					++it;
 			}
@@ -489,7 +546,18 @@ void OpenMainWindow()
 			ImGui::SetNextWindowPos(monitor->WorkPos + (monitor->WorkSize * 0.5f), ImGuiCond_FirstUseEver, { 0.5f, 0.5f });
 
 			if (s_mainWindow != nullptr)
+			{
 				s_mainWindow->Draw(&is_open);
+
+				if (s_persistMainWindow)
+				{
+					if (const std::string_view panel = s_mainWindow->GetSelectedPanel(); !panel.empty() && panel != s_lastPersistedPanel)
+					{
+						s_lastPersistedPanel = std::string(panel);
+						mq::WritePrivateProfileString("MacroQuest", "MainWindowPanel", s_lastPersistedPanel, internal_paths::MQini);
+					}
+				}
+			}
 
 			ImGui::PopStyleVar();
 
@@ -508,6 +576,8 @@ void OpenContextMenu()
 	GetCursorPos(&cursor_pos);
 	ImGui::GetIO().AddMousePosEvent(static_cast<float>(cursor_pos.x), static_cast<float>(cursor_pos.y));
 	s_contextOpen = true;
+	s_contextNeedsFocus = true;
+	s_contextGotFocus = false;
 }
 
 void OpenMessageBox(ImGuiViewport* viewport, const std::string& message, const std::string& title, const ImVec2& size)
@@ -564,6 +634,23 @@ void MaybeShowContextMenu()
 
 	if (ImGui::BeginPopup("Context Popup", ImGuiWindowFlags_NoMove))
 	{
+		if (ImGuiViewport* vp = ImGui::GetWindowViewport())
+		{
+			if (HWND hwnd = static_cast<HWND>(vp->PlatformHandle))
+			{
+				if (s_contextNeedsFocus)
+				{
+					::SetForegroundWindow(hwnd);
+					s_contextNeedsFocus = false;
+				}
+
+				if (::GetForegroundWindow() == hwnd)
+					s_contextGotFocus = true;
+				else if (s_contextGotFocus)
+					ImGui::CloseCurrentPopup();
+			}
+		}
+
 		// at the top we always want a way to open the GUI
 		if (ImGui::MenuItem("Open UI"))
 			OpenMainWindow();
@@ -583,6 +670,11 @@ void MaybeShowContextMenu()
 			PostQuitMessage(0);
 
 		ImGui::EndPopup();
+	}
+	else
+	{
+		s_contextNeedsFocus = false;
+		s_contextGotFocus = false;
 	}
 
 	ImGui::PopStyleVar();

@@ -160,7 +160,7 @@ void InitializeConsole()
 	{
 		// The logger already exists, so replace ring buffer sink with stdout sink.
 		auto logger = spdlog::default_logger();
-		
+
 		// Erase the ring buffer sink from the logger's list of sinks.
 		auto& sinks = logger->sinks();
 		sinks.erase(std::remove_if(sinks.begin(), sinks.end(), [](const auto& sink) { return sink == s_ringBufferSink; }), sinks.end());
@@ -585,6 +585,26 @@ void ShowLoggingSettings()
 	}
 }
 
+void ShowUISettings()
+{
+	ImGui::PushFont(mq::imgui::LargeTextFont);
+	ImGui::Text("User Interface");
+	ImGui::PopFont();
+	ImGui::Separator();
+
+	bool showConsole = gbConsoleVisible;
+	if (ImGui::Checkbox("Show Debug Console", &showConsole))
+		UpdateShowConsole(showConsole, true);
+	ImGui::SameLine();
+	mq::imgui::HelpMarker("Shows or hides the MacroQuest loader debug console window.");
+
+	bool persist = LauncherImGui::GetPersistMainWindow();
+	if (ImGui::Checkbox("Persist UI State", &persist))
+		LauncherImGui::SetPersistMainWindow(persist);
+	ImGui::SameLine();
+	mq::imgui::HelpMarker("When enabled, if the MacroQuest Loader UI (this window) is open when the loader closes, it reopens to the same place on the next launch.");
+}
+
 #pragma endregion
 
 #pragma region Paths and Configuration
@@ -689,15 +709,40 @@ void SetForegroundWindowInternal(HWND hWnd)
 {
 	if (IsWindow(hWnd))
 	{
-		if (IsIconic(hWnd))
-			ShowWindow(hWnd, SW_RESTORE);
-
-		if (!::SetForegroundWindow(hWnd) && !SendSetForegroundWindow(hWnd, gFocusProcessID))
+		if (::GetForegroundWindow() == hWnd)
 		{
-			SPDLOG_DEBUG("Failed to set foreground window. Doing it with min/restore.");
+			return;
+		}
 
-			ShowWindow(hWnd, SW_MINIMIZE);
-			ShowWindow(hWnd, SW_RESTORE);
+		DWORD fgPid = 0;
+		::GetWindowThreadProcessId(::GetForegroundWindow(), &fgPid);
+		const bool weAreForeground = (fgPid == GetCurrentProcessId());
+
+		if (weAreForeground)
+		{
+			// The launcher itself is foreground. We have privilege, so grant it to the
+			// target and ask it to foreground itself. Us foregrounding it has odd behavior.
+			DWORD targetPid = 0;
+			::GetWindowThreadProcessId(hWnd, &targetPid);
+			if (targetPid != 0)
+			{
+				::AllowSetForegroundWindow(targetPid);
+			}
+
+			if (!SendSelfForeground(hWnd))
+			{
+				SPDLOG_DEBUG("SendSelfForeground failed (no pipe connection for target's owning process).");
+			}
+		}
+		// If we don't have privilege then try to route via an EQ instance that does that does.
+		else if (!SendSetForegroundWindow(hWnd, gFocusProcessID))
+		{
+			SPDLOG_DEBUG("SendSetForegroundWindow failed (no foregrounded MQ process). Falling back to SendSelfMinRestore.");
+
+			if (!SendSelfMinRestore(hWnd))
+			{
+				SPDLOG_DEBUG("SendSelfMinRestore also failed (no pipe connection for target's owning process).");
+			}
 		}
 	}
 }
@@ -1073,6 +1118,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case WM_RBUTTONUP:
+				::SetForegroundWindow(hWnd);
 				LauncherImGui::OpenContextMenu();
 				break;
 			}
@@ -1352,6 +1398,7 @@ void InitializeWindows()
 	LauncherImGui::AddMainPanel("MacroQuest Info", ShowMacroQuestInfo);
 	LauncherImGui::AddMainPanel("Logging", ShowLoggingSettings);
 	LauncherImGui::AddMainPanel("Processes", ShowProcessInfo);
+	LauncherImGui::AddMainPanel("UI Settings", ShowUISettings);
 	LauncherImGui::AddContextGroup("##MacroQuest", ShowMacroQuestMenu);
 }
 
