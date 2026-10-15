@@ -136,4 +136,4 @@ jobs:
         shell: pwsh
         run: |
           gh release delete tob-latest --cleanup-tag --yes 2>$null
-          gh release create tob-latest OpenVanilla-ToB.zip --target ${{ github.sha }} --latest --title "OpenVanilla ToB (build ${{ github.run_number }})" --notes "OpenVanilla for the EQEmu ToB client (eqgame.exe Sep 11 2025 11:54:10), built from ${{ github.sha }}. Unzip, run MacroQuest.exe, then start the client."
+          gh release create tob-latest OpenVanilla-ToB.zip --target ${{ github.sha }} --latest --title "OpenVanilla ToB (build ${{ github.run_number }})" --notes "OpenVanilla for the EQEmu ToB client (eqgame.exe Sep 11 2025 11:54:10), built from ${{ github.sha }}. Unzip, run MacroQuest.exe, then start the client. When updating an existing install, skip the config folder if you have customized your HUD, map or MoveUtils settings."

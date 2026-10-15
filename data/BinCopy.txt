@@ -1,4 +1,9 @@
 config/MacroQuest_default.ini
+config/MQ2HUD.ini
+config/MQ2Map.ini
+config/MQ2MoveUtils.ini
+config/zoned.cfg
+config/CharSelect.cfg
 macros/*.mac
 resources/*
 MeshUpdater.exe
